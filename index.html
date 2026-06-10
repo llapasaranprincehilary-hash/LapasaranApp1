@@ -1145,6 +1145,7 @@ function fmtDate(d){if(!d)return'';const p=d.split('-');if(p.length===3)return p
 function uid(){return ++state.nextId;}
 function clamp(v,lo,hi){return Math.min(hi,Math.max(lo,v));}
 
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
 function toast(msg,type='ok'){
   const el=document.getElementById('toast');
   const icon=document.getElementById('toast-icon');
@@ -1418,7 +1419,7 @@ function renderExpenses(){
   const badge=document.getElementById('exp-total-badge');
   if(badge)badge.textContent=state.expenses.length?(searchQ||expFilter!=='all'?`${fmt(filtered)} of ${fmt(totalExp)}`:fmt(totalExp)):'';
   document.getElementById('expense-list').innerHTML=list.length
-    ?list.map(e=>{const wl=(state.wallets||[]).find(w=>w.id===e.source);const srcLabel=wl?wl.label:e.source;return `<div class="entry"><div class="info"><div class="name">${e.desc}${e.recurring?'<span class="badge badge-recurring" style="margin-left:6px;font-size:9px">↺ recurring</span>':''}</div><div class="meta">${fmtDate(e.date)} · ${srcLabel}${e.note?' · <em style="color:var(--muted)">'+e.note+'</em>':''}<span class="badge badge-${e.cat||'other-exp'}">${CAT_LABELS[e.cat||'other-exp']}</span></div></div><div class="right"><span class="amt an">${fmt(e.amount)}</span><button class="btn btn-danger btn-sm" onclick="del('expenses',${e.id})">Remove</button></div></div>`;}).join('')
+    ?list.map(e=>{const wl=(state.wallets||[]).find(w=>w.id===e.source);const srcLabel=wl?wl.label:e.source;return `<div class="entry"><div class="info"><div class="name">${e.desc}${e.recurring?'<span class="badge badge-recurring" style="margin-left:6px;font-size:9px">↺ recurring</span>':''}</div><div class="meta">${fmtDate(e.date)} · ${srcLabel}${e.note?' · <em style="color:var(--muted)">'+esc(e.note)+'</em>':''}<span class="badge badge-${e.cat||'other-exp'}">${CAT_LABELS[e.cat||'other-exp']}</span></div></div><div class="right"><span class="amt an">${fmt(e.amount)}</span><button class="btn btn-danger btn-sm" onclick="del('expenses',${e.id})">Remove</button></div></div>`;}).join('')
     :`<div class="empty"><div class="empty-icon">${searchQ?'🔍':'🧾'}</div><div class="empty-title">${searchQ?'No matching expenses':'No expenses yet'}</div><div class="empty-sub">${searchQ?'Try a different term.':'Start logging above.'}</div></div>`;
 }
 
@@ -1430,7 +1431,7 @@ function renderLoans(){
   document.getElementById('loan-list').innerHTML=state.loans.length
     ?state.loans.map(l=>`<div class="entry" style="flex-direction:column;align-items:stretch;gap:8px" id="loan-entry-${l.id}">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
-        <div class="info"><div class="name" style="${l.settled?'opacity:.4':''}">${l.name}${l.note?' · '+l.note:''}</div>
+        <div class="info"><div class="name" style="${l.settled?'opacity:.4':''}">${esc(l.name)}${l.note?' · '+esc(l.note):''}</div>
         <div class="meta"><span class="badge ${l.settled?'badge-settled':l.type==='payable'?'badge-payable':'badge-receivable'}">${l.settled?'Settled':l.type==='payable'?'I owe':'Owes me'}</span></div></div>
         <div class="right">
           <span class="amt ${l.settled?'aw':l.type==='payable'?'an':'ap'}" style="${l.settled?'opacity:.4':''}">${fmt(l.amount)}</span>
@@ -1455,7 +1456,7 @@ function addIncome(){
   const type=document.getElementById('inc-type').value;
   const amount=parseFloat(document.getElementById('inc-amount').value);
   const note=document.getElementById('inc-note').value.trim();
-  if(!amount||amount<=0){toast('Enter a valid amount','error');return;}
+  if(!amount||amount<=0||isNaN(amount)){toast('Enter a valid amount','error');return;}
   state.income.push({id:uid(),month,year,type,amount,note});
   document.getElementById('inc-amount').value='';document.getElementById('inc-note').value='';
   save();render();toast('Income added ✓');
@@ -1478,7 +1479,7 @@ function onExpCatChange(){
   }
 }
 
-function addExpense(){
+async function addExpense(){
   const desc=document.getElementById('exp-desc').value.trim();
   const amount=parseFloat(document.getElementById('exp-amount').value);
   const cat=document.getElementById('exp-cat').value;
@@ -1492,7 +1493,8 @@ function addExpense(){
   const wallet=(state.wallets||[]).find(w=>w.id===source);
   if(wallet){
     if(wallet.balance<amount){
-      if(!confirm('⚠️ This will put your '+wallet.label+' balance below zero. Continue?'))return;
+      const goNeg=await mtConfirm('This will put your '+wallet.label+' balance below zero. Continue?','⚠️','Continue','var(--amber)');
+      if(!goNeg)return;
     }
     wallet.balance=Math.round((wallet.balance-amount)*100)/100;
     wallet.updated=today();
@@ -1517,7 +1519,7 @@ function addExpense(){
 }
 function addLoan(){
   const name=document.getElementById('loan-name').value.trim();
-  const amount=parseFloat(document.getElementById('loan-amount').value);
+  const amount=parseFloat(document.getElementById('loan-amount').value)||0;
   const type=document.getElementById('loan-type').value;
   const note=document.getElementById('loan-note').value.trim();
   if(!name){toast('Enter a name','error');return;}
@@ -1557,7 +1559,9 @@ function addWallet(){
   const balEl=document.getElementById('new-wallet-bal');
   const name=(nameEl.value||'').trim();
   const bal=parseFloat(balEl.value)||0;
+  name=name.trim();
   if(!name){toast('Enter a wallet name','error');return;}
+  if(name.length>24){toast('Name too long (max 24 chars)','error');return;}
   if(name.length>24){toast('Name too long (max 24 chars)','error');return;}
   const id='w'+Date.now();
   if(!state.wallets)state.wallets=[];
@@ -1572,7 +1576,7 @@ function settle(id){
 }
 function adjustLoan(id,mode){
   const inp=document.getElementById('adj-'+id);
-  const val=parseFloat(inp.value);
+  const val=parseFloat(inp.value)||0;
   if(isNaN(val)||val<=0){toast('Enter a valid amount','error');return;}
   const l=state.loans.find(x=>x.id===id);
   if(!l)return;
@@ -1587,8 +1591,9 @@ function adjustLoan(id,mode){
   inp.value='';
   save();render();
 }
-function del(type,id){
-  if(!confirm('Remove this entry?'))return;
+async function del(type,id){
+  const ok=await mtConfirm('Remove this entry?','🗑️','Remove','var(--red)');
+  if(!ok)return;
   state[type]=state[type].filter(x=>x.id!==id);
   save();render();toast('Removed');
 }
@@ -1612,16 +1617,36 @@ function backupData(){
   const d=new Date().toISOString().split('T')[0];
   dlFile(backup,`money-things-backup-${d}.json`,'application/json');toast('Backup saved ✓');
 }
+function migrateBackup(parsed){
+  // Convert old balances/balanceDates format to wallets array
+  if(parsed.balances && !parsed.wallets){
+    const b=parsed.balances; const d=parsed.balanceDates||{};
+    parsed.wallets=[
+      {id:'maya',label:'Maya',balance:b.maya||0,updated:d.maya||today()},
+      {id:'gcash',label:'GCash',balance:b.gcash||0,updated:d.gcash||today()},
+      {id:'coh',label:'Cash on Hand',balance:b.coh||0,updated:d.coh||today()},
+    ];
+    delete parsed.balances; delete parsed.balanceDates;
+  }
+  // Add missing year to income entries
+  if(parsed.income) parsed.income=parsed.income.map(i=>({year:2026,...i}));
+  // Fix expenses with old 'Cash' source to 'coh'
+  if(parsed.expenses) parsed.expenses=parsed.expenses.map(e=>({...e,source:e.source==='Cash'?'coh':e.source}));
+  return parsed;
+}
 function restoreData(){
   const file=document.getElementById('restore-file').files[0];
   if(!file){toast('Pick a backup file first','error');return;}
   const reader=new FileReader();
   reader.onload=e=>{
     try{
-      const parsed=JSON.parse(e.target.result);
-      if(!parsed.income&&!parsed.wallets){toast('Invalid backup file','error');return;}
-      Object.assign(state,parsed);save();render();toast('Data restored ✓');
-    }catch{toast('Could not read file','error');}
+      let parsed=JSON.parse(e.target.result);
+      if(!parsed.income&&!parsed.wallets&&!parsed.balances){toast('Invalid backup file','error');return;}
+      parsed=migrateBackup(parsed);
+      Object.assign(state,parsed);
+      if(!Array.isArray(state.wallets)||!state.wallets.length)state.wallets=[{id:'maya',label:'Maya',balance:0,updated:today()},{id:'gcash',label:'GCash',balance:0,updated:today()},{id:'coh',label:'Cash on Hand',balance:0,updated:today()}];
+      save();render();toast('Data restored ✓');
+    }catch(err){toast('Could not read file','error');console.error(err);}
   };
   reader.readAsText(file);
 }
@@ -1777,6 +1802,19 @@ function exportMonthlyReport(){
     <span>Money Things v1.10 — Personal Finance Tracker</span>
     <span>Confidential · For personal use only</span>
   </div>
+
+<!-- CONFIRM MODAL -->
+<div id="confirm-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);z-index:3000;align-items:center;justify-content:center;padding:20px">
+  <div style="background:var(--surface);border:1px solid var(--border2);border-radius:16px;padding:28px 28px 22px;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.2)">
+    <div id="confirm-icon" style="font-size:32px;margin-bottom:12px;text-align:center"></div>
+    <div id="confirm-msg" style="font-size:14px;color:var(--text);text-align:center;line-height:1.6;margin-bottom:22px"></div>
+    <div style="display:flex;gap:10px">
+      <button id="confirm-cancel-btn" onclick="confirmResolve(false)" style="flex:1;padding:10px;border-radius:9px;border:1px solid var(--border2);background:transparent;color:var(--muted);font-family:var(--font-b);font-size:13px;cursor:pointer">Cancel</button>
+      <button id="confirm-ok-btn" onclick="confirmResolve(true)" style="flex:1;padding:10px;border-radius:9px;border:none;background:var(--red);color:#fff;font-family:var(--font-d);font-size:13px;font-weight:700;cursor:pointer">Confirm</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>`;
 
@@ -1832,7 +1870,7 @@ function saveBudget(){
 }
 function addGoal(){
   const name=document.getElementById('goal-name').value.trim();
-  const target=parseFloat(document.getElementById('goal-target').value);
+  const target=parseFloat(document.getElementById('goal-target').value)||0;
   const saved=parseFloat(document.getElementById('goal-saved').value)||0;
   const note=document.getElementById('goal-note').value.trim();
   if(!name){toast('Enter a goal name','error');return;}
@@ -1846,15 +1884,16 @@ function addGoal(){
 function addToGoal(id){
   const g=state.goals.find(x=>x.id===id);
   const inp=document.getElementById('gs-'+id);
-  const v=parseFloat(inp.value);
+  const v=parseFloat(inp.value)||0;
   if(!g||isNaN(v)||v<=0){toast('Enter a valid amount','error');return;}
   g.saved=Math.round((g.saved+v)*100)/100;
   if(g.saved>=g.target){toast('🎉 Goal reached! '+g.name);}
   else toast(fmt(v)+' added to '+g.name+' ✓');
   save();render();
 }
-function delGoal(id){
-  if(!confirm('Remove this goal?'))return;
+async function delGoal(id){
+  const ok=await mtConfirm('Remove this goal?','🗑️','Remove','var(--red)');
+  if(!ok)return;
   state.goals=state.goals.filter(x=>x.id!==id);
   save();render();toast('Goal removed');
 }
@@ -2026,9 +2065,8 @@ let clearPinBuf='';
 function showClearConfirm(){
   if(!state.pin){
     // no pin set, use double confirm
-    if(!confirm('This will permanently delete ALL your data. Are you sure?'))return;
-    if(!confirm('Really sure? This cannot be undone.'))return;
-    doActualClear(); return;
+    mtConfirm('This will permanently delete ALL your data. This cannot be undone.','⚠️','Yes, Delete Everything','var(--red)').then(ok=>{if(ok)doActualClear();});
+    return;
   }
   clearPinBuf='';
   document.getElementById('auth-overlay').style.display='flex';
@@ -2140,8 +2178,9 @@ function changeName(){
   state.username=nm; save(); render(); toast('Name updated ✓');
   document.getElementById('settings-newname').value='';
 }
-function removePin(){
-  if(!confirm('Remove PIN lock? Your app will no longer be protected.'))return;
+async function removePin(){
+  const ok=await mtConfirm('Remove PIN lock? Your app will no longer be protected.','🔓','Remove PIN','var(--amber)');
+  if(!ok)return;
   state.pin='';save();render();toast('PIN removed');
 }
 function restoreFromSettings(input){
@@ -2149,10 +2188,13 @@ function restoreFromSettings(input){
   const reader=new FileReader();
   reader.onload=e=>{
     try{
-      const parsed=JSON.parse(e.target.result);
-      if(!parsed.income&&!parsed.wallets){toast('Invalid backup file','error');return;}
-      Object.assign(state,parsed);save();render();updateSidebarUsername();toast('Data restored ✓');
-    }catch{toast('Could not read file','error');}
+      let parsed=JSON.parse(e.target.result);
+      if(!parsed.income&&!parsed.wallets&&!parsed.balances){toast('Invalid backup file','error');return;}
+      parsed=migrateBackup(parsed);
+      Object.assign(state,parsed);
+      if(!Array.isArray(state.wallets)||!state.wallets.length)state.wallets=[{id:'maya',label:'Maya',balance:0,updated:today()},{id:'gcash',label:'GCash',balance:0,updated:today()},{id:'coh',label:'Cash on Hand',balance:0,updated:today()}];
+      save();render();updateSidebarUsername();toast('Data restored ✓');
+    }catch(err){toast('Could not read file','error');console.error(err);}
   };
   reader.readAsText(file);
 }
@@ -2333,6 +2375,24 @@ function renderTutSlide(){
       <div style="font-size:14px;color:var(--muted);line-height:1.7;margin-bottom:${s.tip?'16px':'0'}">${s.desc}</div>
       ${s.tip?`<div style="background:var(--accent-bg);border:1px solid var(--accent-dim);border-radius:9px;padding:10px 14px;font-size:12.5px;color:var(--accent);text-align:left">${s.tip}</div>`:''}
     </div>`;
+}
+
+
+/* ── CUSTOM CONFIRM ── */
+let _confirmResolve=null;
+function mtConfirm(msg,icon='⚠️',okLabel='Confirm',okColor='var(--red)'){
+  return new Promise(resolve=>{
+    _confirmResolve=resolve;
+    document.getElementById('confirm-modal').style.display='flex';
+    document.getElementById('confirm-icon').textContent=icon;
+    document.getElementById('confirm-msg').textContent=msg;
+    document.getElementById('confirm-ok-btn').textContent=okLabel;
+    document.getElementById('confirm-ok-btn').style.background=okColor;
+  });
+}
+function confirmResolve(val){
+  document.getElementById('confirm-modal').style.display='none';
+  if(_confirmResolve){_confirmResolve(val);_confirmResolve=null;}
 }
 
 /* INIT */
